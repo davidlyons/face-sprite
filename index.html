@@ -1,0 +1,575 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+
+		<title>Face Sprite</title>
+
+		<link href="https://davidlyons.dev/sketches/info.css" rel="stylesheet">
+
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+				font-size: 13px;
+				background-color: #333333;
+				color: #fff;
+				margin: 0px;
+				overflow: hidden;
+			}
+		</style>
+	</head>
+	<body>
+
+		<script src="third-party/three.js"></script>
+		<script src="third-party/OrbitControls.js"></script>
+		<script src="third-party/FBXLoader2.js"></script>
+		<script src="third-party/texture-animator.js"></script>
+		<script src="third-party/storyline.js"></script>
+		<script src="https://davidlyons.dev/sketches/info.js"></script>
+		<!-- <script src="src/NeonShader.js"></script> -->
+
+		<script>
+
+		var info = new Info(
+				'Face Sprite',
+				[
+					'<p><a href="https://davidlyons.dev">David Lyons</a>, March 2017</p>',
+					'<p>Animated the eyes blinking and mouth opening using three planes parented to the head bone and a sprite sheet texture map, sliding the UV offset around on the sprite sheet.</p>',
+					'<p>For <a href="https://with.in/neon">Under Neon Lights</a></p>',
+					'<p>Model by Jona Dinges<br>Idle animation by Phish Chiang</p>',
+					'References:<br>',
+					'<a href="https://medium.com/@gordonnl/links-expressions-eb7beae2c62c">Wind Waker Link</a><br>',
+					'<a href="http://stemkoski.github.io/Three.js/Texture-Animation.html">Stemkoski Texture Animation</a>'
+				].join('')
+			);
+
+			var container;
+			var camera, scene, renderer;
+			var controls;
+
+			var annie;
+			var clock = new THREE.Clock();
+
+			init();
+
+			function init() {
+
+				container = document.createElement( 'div' );
+				container.classList.add('container');
+
+				scene = new THREE.Scene();
+
+				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.01, 1000 );
+				camera.position.set( 0, 1, 1.2 );
+
+				//
+
+				renderer = new THREE.WebGLRenderer({ antialias: true });
+				renderer.setClearColor( 0xbbbbbb );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				container.appendChild( renderer.domElement );
+
+				controls = new THREE.OrbitControls( camera, renderer.domElement );
+
+				var fbxLoader = new THREE.FBXLoader();
+				var bufferGeoLoader = new THREE.BufferGeometryLoader();
+				var objectLoader = new THREE.ObjectLoader();
+
+				var root = 'assets/';
+
+				// ----------------------------------------------------------------
+
+				// var annieMat = THREE.neonShader.skinnedShader.clone();
+				// for ( var j in THREE.neonShader.globals ) {
+				// 	annieMat.uniforms[j] = THREE.neonShader.globals[j];
+				// }
+
+				var annieMat = new THREE.MeshBasicMaterial({
+					side: THREE.DoubleSide,
+					vertexColors: true,
+					skinning: true
+				});
+
+				annie = new THREE.Group();
+				scene.add( annie );
+
+				var files = {
+					models: {
+						child: 'ani_chr_1-forest_bindpose_v02.fbx',
+						teenager: 'ani_chr_2-house_bindpose_v02.fbx',
+						adult: 'ani_chr_3-city_bindpose_v02.fbx'
+					},
+					animations: {
+						child: {
+							run: 'ani_chr_1-forest_run_v02.fbx',
+							idle: 'ani_chr_1-forest_idle_v02.fbx'
+						},
+						teenager: {
+							run: 'ani_chr_2-house_run_v02.fbx',
+							idle: 'ani_chr_2-house_idle_v02.fbx'
+						},
+						adult: {
+							run: 'ani_chr_3-city_run_v02.fbx',
+							idle: 'ani_chr_3-city_idle_v02.fbx'
+						}
+					}
+				};
+
+				annie.userData.models = {};
+				annie.userData.animations = { child: {}, teenager: {}, adult: {} };
+				annie.userData.model = null;
+
+				// files.models length (3), face sprite (1)
+				enhance( annie.userData.models, 4 );
+
+				enhance( annie.userData.animations, 6 );
+
+				annie.userData.age = function ( age ) {
+					annie.userData.models.complete.ready( function () {
+
+						var model = annie.userData.models[ age ];
+						model.visible = true;
+
+						if (annie.userData.model != model && annie.userData.model) {
+							annie.userData.prevModel = annie.userData.model;
+							annie.userData.transitionTime = 0;
+
+							// annie.userData.prevModel.userData.skeletonHelper.visible = false;
+						}
+
+						// model.userData.skeletonHelper.visible = true;
+
+						annie.userData.model = model;
+
+						var bb = model.userData.boundingBox;
+						var height = bb.max.y - bb.min.y;
+						controls.target.y = height * 0.66;
+
+					} );
+				};
+
+				annie.userData.prevModel = null;
+				// annie.userData.transitionLength = 1;
+				annie.userData.transitionLength = 0; // 0 bc the clip doesn't work without the custom shader
+				annie.userData.transitionTime = 1;
+
+				annie.userData.updateAnimation = function( dt ) {
+					annie.userData.transitionTime += dt;
+					if ( dt == 0 || dt > 0.1) annie.userData.transitionTime = 1;
+					var weight = annie.userData.transitionTime / annie.userData.transitionLength;
+					if ( annie.userData.model ) {
+						annie.userData.model.mixer.update( dt );
+						setClipRange( annie.userData.model, 0 , weight * 2 );
+					}
+					if ( annie.userData.prevModel ) {
+						annie.userData.prevModel.mixer.update( dt );
+						if (weight > 1) {
+							annie.userData.prevModel.visible = false;
+							delete annie.userData.prevModel;
+						} else {
+							setClipRange( annie.userData.prevModel, 2 * weight, 2 );
+						}
+					}
+				}
+
+				annie.userData.play = function ( action, forced ) {
+
+					annie.userData.animations.complete.ready( function () {
+						if ( !annie.userData.model ) return;
+
+						var model = annie.userData.model;
+						var animations = model.userData.animations;
+						var current = model.userData.currentAnimation;
+
+						if ( current && current.type === action ) {
+							return;
+						}
+
+						for ( var k in animations ) {
+							var animation = animations[ k ];
+							if ( k !== action ) {
+								continue;
+							}
+							if ( current ) {
+								if ( current === animation ) {
+									break;
+								}
+								if ( !!forced ) {
+									current.action.stop();
+								} else {
+									animation.action.crossFadeFrom( current.action, 0.35 );
+								}
+								animation.action.stop().play();
+							} else {
+								animation.action.play();
+							}
+							model.userData.currentAnimation = animation;
+						}
+
+					} );
+
+				};
+
+				for ( var age in files.models ) {
+
+					fbxLoader.load( root + files.models[ age ], loadModel( age ) );
+
+					var animations = files.animations[ age ];
+
+					for ( var action in animations ) {
+
+						var animation = animations[ action ];
+						fbxLoader.load( root + animation, animationLoaded( age, action ) );
+
+					}
+
+				}
+
+				var faceImage = document.createElement('img');
+				faceImage.crossOrigin = 'anonymous';
+				faceImage.src = root + 'TX_annieFacial_A01_C_v02.png';
+
+				faceImage.onload = function() {
+
+					var models = annie.userData.models;
+
+					models.complete.ready( function () {
+
+						for ( var age in files.models ) {
+
+							models[ age ].userData.eyeLeft.texture.needsUpdate = true;
+							models[ age ].userData.eyeRight.texture.needsUpdate = true;
+							models[ age ].userData.mouth.texture.needsUpdate = true;
+
+						}
+
+					} );
+
+					models.complete();
+
+				};
+
+				annie.userData.models.complete.ready( function () {
+
+					var models = annie.userData.models;
+
+					// child
+
+					models.child.userData.eyeLeft.animator.currentTile = 0;
+					models.child.userData.eyeRight.animator.currentTile = 0;
+
+					var childEyeLeft = models.child.userData.eyeLeft.mesh;
+					childEyeLeft.position.set( 0.106, 0.129, 0.134 );
+					childEyeLeft.rotation.x = THREE.Math.degToRad( 11.182 );
+					childEyeLeft.rotation.y = THREE.Math.degToRad( 22.183 );
+					childEyeLeft.rotation.z = THREE.Math.degToRad( 1.924 );
+					childEyeLeft.scale.set( 0.77, 0.77, 0.77 );
+
+					var childEyeRight = models.child.userData.eyeRight.mesh;
+					childEyeRight.position.set( -0.106, 0.129, 0.134 );
+					childEyeRight.rotation.x = THREE.Math.degToRad( 11.182 );
+					childEyeRight.rotation.y = THREE.Math.degToRad( -22.183 );
+					childEyeRight.rotation.z = THREE.Math.degToRad( 1.924 );
+					childEyeRight.scale.set( 0.77, 0.77, 0.77 );
+
+					var childMouth = models.child.userData.mouth.mesh;
+					childMouth.position.set( 0, 0.058, 0.131 );
+					childMouth.rotation.x = THREE.Math.degToRad( 29.534 );
+					childMouth.scale.set( 1.28, 1.28, 1.28 );
+
+					// teen
+
+					models.teenager.userData.eyeLeft.animator.currentTile = 2;
+					models.teenager.userData.eyeRight.animator.currentTile = 2;
+
+					var teenEyeLeft = models.teenager.userData.eyeLeft.mesh;
+					teenEyeLeft.position.set( 0.081, 0.116, 0.164 );
+					teenEyeLeft.rotation.x = THREE.Math.degToRad( 15.641 );
+					teenEyeLeft.rotation.y = THREE.Math.degToRad( 33.377 );
+					teenEyeLeft.rotation.z = THREE.Math.degToRad( 0.148 );
+
+					var teenEyeRight = models.teenager.userData.eyeRight.mesh;
+					teenEyeRight.position.set( -0.081, 0.116, 0.164 );
+					teenEyeRight.rotation.x = THREE.Math.degToRad( 15.641 );
+					teenEyeRight.rotation.y = THREE.Math.degToRad( -33.377 );
+					teenEyeRight.rotation.z = THREE.Math.degToRad( 0.148 );
+
+					var teenMouth = models.teenager.userData.mouth.mesh;
+					teenMouth.position.set( 0, 0.049, 0.154 );
+					teenMouth.rotation.x = THREE.Math.degToRad( 28.713 );
+					teenMouth.scale.set( 1.1, 1.1, 1.1 );
+
+					// adult
+
+					models.adult.userData.eyeLeft.animator.currentTile = 2;
+					models.adult.userData.eyeRight.animator.currentTile = 2;
+
+					var adultEyeLeft = models.adult.userData.eyeLeft.mesh;
+					adultEyeLeft.position.set( 0.099, 0.139, 0.165 );
+					adultEyeLeft.rotation.x = THREE.Math.degToRad( 5.452 );
+					adultEyeLeft.rotation.y = THREE.Math.degToRad( 30.268 );
+					adultEyeLeft.scale.set( 1.2, 1.2, 1.2 );
+
+					var adultEyeRight = models.adult.userData.eyeRight.mesh;
+					adultEyeRight.position.set( -0.099, 0.139, 0.165 );
+					adultEyeRight.rotation.x = THREE.Math.degToRad( 5.452 );
+					adultEyeRight.rotation.y = THREE.Math.degToRad( -30.268 );
+					adultEyeRight.scale.set( 1.2, 1.2, 1.2 );
+
+					var adultMouth = models.adult.userData.mouth.mesh;
+					adultMouth.position.set( 0, 0.056, 0.167 );
+					adultMouth.rotation.x = THREE.Math.degToRad( 28.975 );
+					adultMouth.scale.set( 1.28, 1.28, 1.28 );
+
+				} );
+
+				var facePlaneGeo = new THREE.PlaneBufferGeometry( 0.1, 0.1, 0.1 );
+
+				var FacePlane = function( parent ) {
+					var texture = this.texture = new THREE.Texture( faceImage );
+					texture.premultiplyAlpha = true;
+					this.animator = new TextureAnimator( texture, 4, 4 );
+					this.animator.currentTile = 0;
+					var material = new THREE.MeshBasicMaterial({
+						transparent: true,
+						map: texture,
+						fog: false // so the eyes aren't white in front of black plane
+					});
+					var mesh = this.mesh = new THREE.Mesh( facePlaneGeo, material );
+					parent.add( mesh );
+				}
+
+				function loadModel ( age ) {
+
+					return function ( fbx ) {
+
+						annie.userData.models[ age ] = fbx;
+
+						fbx.traverse( function ( child ) {
+
+							if ( child.isMesh ) {
+
+								var lambert = child.material;
+								child.material = annieMat;
+								lambert.dispose();
+
+								child.geometry.computeBoundingBox();
+								fbx.userData.boundingBox = child.geometry.boundingBox;
+
+							}
+
+						} );
+
+						fbx.mixer = new THREE.AnimationMixer( fbx );
+						fbx.visible = false;
+						fbx.userData.animations = {};
+
+						annie.add( fbx );
+
+						// var helper = new THREE.SkeletonHelper( fbx.children[0] );
+						// helper.material.linewidth = 3;
+						// helper.visible = false;
+						// fbx.userData.skeletonHelper = helper;
+						// scene.add( helper );
+
+						var headBones = {
+							child: 'annieHead',
+							teenager: 'annieTeenHead',
+							adult: 'annieGrownHead'
+						};
+
+						var headBone = fbx.children[0].getObjectByName( headBones[age] );
+
+						fbx.userData.eyeLeft = new FacePlane( headBone );
+						fbx.userData.eyeRight = new FacePlane( headBone );
+						fbx.userData.mouth = new FacePlane( headBone );
+						fbx.userData.mouth.animator.currentTile = 4;
+
+						annie.userData.models.complete();
+
+					};
+
+				}
+
+				function animationLoaded ( age, action ) {
+
+					return function ( fbx ) {
+
+						annie.userData.models.complete.ready( function () {
+
+							var model = annie.userData.models[ age ];
+
+							var animation = fbx.animations[ 0 ];
+							animation.name += ': ' + age + ' : ' + action;
+							animation.type = action;
+							animation.action = model.mixer.clipAction( animation );
+
+							if ( /turn/.test( action ) ) {
+								animation.action.loop = THREE.LoopOnce;
+								animation.action.loopCount = 1;
+							}
+
+							model.userData.animations[ action ] = animation;
+							annie.userData.animations[ age ][ action ] = animation;
+							annie.userData.animations.complete();
+
+						} );
+
+					};
+
+				}
+
+				function setClipRange ( obj, clipStart, clipEnd )  {
+
+					obj.traverse( function( child ) {
+
+						if ( child.material && child.material.uniforms && child.material.uniforms.clipy ) {
+						  child.material.uniforms.clipy.value.set( clipStart, clipEnd );
+						}
+
+					} );
+
+				}
+
+				function enhance ( obj, length ) {
+
+					var complete = function () {
+
+						complete.index++;
+
+						if ( !complete.completed && complete.index >= complete.amount ) {
+							for ( var i = 0; i < complete.callbacks.length; i++ ) {
+								complete.callbacks[ i ]();
+							}
+							complete.callbacks.length = 0;
+							complete.completed = true;
+						}
+
+					};
+
+					complete.ready = function ( func ) {
+						if ( complete.completed ) {
+							func();
+							return;
+						}
+						complete.callbacks.push( func );
+					};
+
+					complete.completed = false;
+					complete.index = 0;
+					complete.amount = length;
+					complete.callbacks = [];
+
+					obj.complete = complete;
+
+				}
+
+				//
+
+				annie.userData.models.complete.ready( function () {
+					annie.userData.animations.complete.ready( function () {
+
+						document.body.appendChild( container );
+
+						// annie.userData.age('child');
+						// annie.userData.play('idle');
+
+						annie.userData.age('teenager');
+						annie.userData.play('idle');
+
+						// annie.userData.age('adult');
+						// annie.userData.play('run');
+
+						loop();
+
+						eyesOpen();
+
+					});
+				});
+
+				// End Annie Setup
+
+				// ----------------------------------------------------------------
+
+				window.addEventListener( 'resize', resize, false );
+
+			}
+
+			function resize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize( window.innerWidth, window.innerHeight );
+			}
+
+			//
+
+			function eyesOpen(){
+				eyeState( 0 );
+				setTimeout(eyesClose, THREE.Math.randInt(1000, 4000) );
+			}
+
+			function eyesClose(){
+				eyeState( 1 );
+				setTimeout(eyesOpen, THREE.Math.randInt(50, 150) );
+			}
+
+			function eyeState( tile ) {
+				var offset = annie.userData.model == annie.userData.models.child ? 0 : 2;
+				annie.userData.model.userData.eyeLeft.animator.currentTile = tile + offset;
+				annie.userData.model.userData.eyeRight.animator.currentTile = tile + offset;
+			}
+
+			//
+
+			// https://github.com/spite/Storyline.js
+
+			var storyline = STORYLINE.parseStoryline( {
+				"tile": [
+					"0 cut to 4",
+					"0.3 cut to 5",
+					"0.4 cut to 6",
+					"0.5 cut to 5",
+					"0.6 cut to 4",
+
+					"1.0 cut to 7",
+					"1.1 cut to 6",
+					"1.2 cut to 7",
+					"1.3 cut to 4",
+
+					"2.0 cut to 4",
+					"2.1 cut to 5",
+					"2.2 cut to 6",
+					"2.3 cut to 5",
+					"2.4 cut to 4"
+				]
+			} );
+
+			//
+
+			function loop() {
+
+				requestAnimationFrame( loop );
+
+				var delta = clock.getDelta();
+
+				annie.userData.updateAnimation( delta );
+
+				var time = clock.getElapsedTime() % 3; // repeat the same 3 seconds
+				var tile = storyline.get( 'tile', time );
+				annie.userData.model.userData.mouth.animator.currentTile = tile;
+
+				controls.update();
+
+				// if ( annie.userData.model.userData.skeletonHelper.visible ) {
+				// 	annie.userData.model.userData.skeletonHelper.update();
+				// }
+
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+	</body>
+</html>
